@@ -33,14 +33,27 @@ export const VaultItem: React.FC<VaultItemProps> = ({
     setDecryptKey('');
   };
 
+  const handleLockClick = () => {
+    if (isDecrypted) {
+      // If already decrypted, re-encrypt with the same key
+      onToggle();
+    } else {
+      // If encrypted, show decrypt input
+      setShowDecryptInput(!showDecryptInput);
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-md p-4 mb-4">
       <div className="flex justify-between items-start mb-3">
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
         <div className="flex gap-2">
           <button
-            onClick={() => setShowDecryptInput(!showDecryptInput)}
-            className="p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+            onClick={handleLockClick}
+            className={`p-2 hover:bg-blue-50 rounded-full transition-colors ${
+              isDecrypted ? 'text-green-600' : 'text-blue-600'
+            }`}
+            title={isDecrypted ? 'Re-encrypt' : 'Decrypt'}
           >
             {isDecrypted ? (
               <Lock className="w-5 h-5" />
@@ -51,6 +64,7 @@ export const VaultItem: React.FC<VaultItemProps> = ({
           <button
             onClick={onDelete}
             className="p-2 text-red-600 hover:bg-red-50 rounded-full transition-colors"
+            title="Delete"
           >
             <Trash2 className="w-5 h-5" />
           </button>
