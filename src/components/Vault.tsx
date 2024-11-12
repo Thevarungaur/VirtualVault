@@ -8,8 +8,10 @@ import toast from 'react-hot-toast';
 export const Vault: React.FC = () => {
   const [entries, setEntries] = useState<VaultEntry[]>([]);
   const [text, setText] = useState('');
+  const [title, setTitle] = useState('');
   const [key, setKey] = useState('');
   const [loading, setLoading] = useState(true);
+  const [decryptionKeys] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     fetchEntries();
@@ -32,7 +34,10 @@ export const Vault: React.FC = () => {
   };
 
   const handleAddText = async () => {
-    if (!text || !key) return;
+    if (!text || !key || !title) {
+      toast.error('Please fill in all fields');
+      return;
+    }
     
     try {
       const encrypted = encryptText(text, parseInt(key));
@@ -43,6 +48,7 @@ export const Vault: React.FC = () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          title,
           type: 'text',
           content: encrypted
         })
@@ -52,6 +58,7 @@ export const Vault: React.FC = () => {
         const newEntry = await response.json();
         setEntries(prev => [...prev, newEntry]);
         setText('');
+        setTitle('');
         toast.success('Text added successfully');
       }
     } catch (error) {
@@ -60,7 +67,10 @@ export const Vault: React.FC = () => {
   };
 
   const handleAddImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!key || !e.target.files?.length) return;
+    if (!key || !title || !e.target.files?.length) {
+      toast.error('Please provide a title and encryption key');
+      return;
+    }
     
     try {
       const file = e.target.files[0];
@@ -73,6 +83,7 @@ export const Vault: React.FC = () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          title,
           type: 'image',
           content: encrypted
         })
@@ -81,6 +92,7 @@ export const Vault: React.FC = () => {
       if (response.ok) {
         const newEntry = await response.json();
         setEntries(prev => [...prev, newEntry]);
+        setTitle('');
         toast.success('Image added successfully');
       }
     } catch (error) {
@@ -88,21 +100,38 @@ export const Vault: React.FC = () => {
     }
   };
 
-  const toggleDecryption = useCallback((id: string) => {
+  const toggleDecryption = useCallback((id: string, decryptKey?: number) => {
     setEntries(prev => prev.map(entry => {
-      if (entry.id !== id) return entry;
+      if (entry._id !== id) return entry;
       
-      const decryptedContent = entry.type === 'text'
-        ? decryptText(entry.content, parseInt(key))
-        : decryptImage(entry.content, parseInt(key));
-      
-      return {
-        ...entry,
-        content: entry.isDecrypted ? entry.content : decryptedContent,
-        isDecrypted: !entry.isDecrypted
-      };
+      try {
+        const keyToUse = decryptKey || decryptionKeys.get(id);
+        
+        if (!keyToUse && !entry.isDecrypted) {
+          toast.error('Please provide a decryption key');
+          return entry;
+        }
+
+        // Store the key for re-encryption
+        if (decryptKey && !entry.isDecrypted) {
+          decryptionKeys.set(id, decryptKey);
+        }
+
+        const decryptedContent = entry.type === 'text'
+          ? decryptText(entry.content, keyToUse!)
+          : decryptImage(entry.content, keyToUse!);
+        
+        return {
+          ...entry,
+          content: entry.isDecrypted ? entry.content : decryptedContent,
+          isDecrypted: !entry.isDecrypted
+        };
+      } catch (error) {
+        toast.error('Invalid decryption key');
+        return entry;
+      }
     }));
-  }, [key]);
+  }, [decryptionKeys]);
 
   const deleteEntry = useCallback(async (id: string) => {
     try {
@@ -112,13 +141,14 @@ export const Vault: React.FC = () => {
       });
 
       if (response.ok) {
-        setEntries(prev => prev.filter(entry => entry.id !== id));
+        setEntries(prev => prev.filter(entry => entry._id !== id));
+        decryptionKeys.delete(id);
         toast.success('Entry deleted successfully');
       }
     } catch (error) {
       toast.error('Failed to delete entry');
     }
-  }, []);
+  }, [decryptionKeys]);
 
   if (loading) {
     return (
@@ -149,22 +179,31 @@ export const Vault: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Add Text
             </label>
-            <div className="flex gap-2">
+            <div className="space-y-2">
               <input
                 type="text"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                placeholder="Enter text to encrypt"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="Enter title"
               />
-              <button
-                onClick={handleAddText}
-                disabled={!text || !key}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                <Send className="w-4 h-4" />
-                Add
-              </button>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="Enter text to encrypt"
+                />
+                <button
+                  onClick={handleAddText}
+                  disabled={!text || !key || !title}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Send className="w-4 h-4" />
+                  Add
+                </button>
+              </div>
             </div>
           </div>
 
@@ -172,6 +211,13 @@ export const Vault: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Add Image
             </label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 mb-2"
+              placeholder="Enter title"
+            />
             <div className="flex items-center justify-center w-full">
               <label className="w-full flex flex-col items-center px-4 py-6 bg-white text-indigo-600 rounded-lg tracking-wide border border-indigo-600 border-dashed cursor-pointer hover:bg-indigo-50 transition-colors">
                 <Upload className="w-8 h-8" />
@@ -181,7 +227,7 @@ export const Vault: React.FC = () => {
                   className="hidden"
                   accept="image/*"
                   onChange={handleAddImage}
-                  disabled={!key}
+                  disabled={!key || !title}
                 />
               </label>
             </div>
@@ -192,10 +238,10 @@ export const Vault: React.FC = () => {
       <div className="space-y-4">
         {entries.map((entry) => (
           <VaultItem
-            key={entry.id}
+            key={entry._id}
             {...entry}
-            onToggle={() => toggleDecryption(entry.id)}
-            onDelete={() => deleteEntry(entry.id)}
+            onToggle={(decryptKey) => toggleDecryption(entry._id, decryptKey)}
+            onDelete={() => deleteEntry(entry._id)}
           />
         ))}
       </div>

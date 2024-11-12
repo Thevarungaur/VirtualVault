@@ -6,8 +6,9 @@ export interface User {
 }
 
 export interface VaultEntry {
-  id: string;
+  _id: string;
   userId: string;
+  title: string;
   type: 'text' | 'image';
   content: string;
   isDecrypted: boolean;

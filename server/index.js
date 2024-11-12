@@ -36,7 +36,6 @@ const app = express();
 const connectDB = async (retries = 5) => {
   try {
     await mongoose.connect(process.env.MONGODB_URI, {
-      // MongoDB Atlas optimized options
       maxPoolSize: 50,
       wtimeoutMS: 2500,
       maxIdleTimeMS: 60000,
@@ -56,7 +55,6 @@ const connectDB = async (retries = 5) => {
   }
 };
 
-// Handle MongoDB connection events
 mongoose.connection.on('disconnected', () => {
   console.log('MongoDB disconnected! Attempting to reconnect...');
   connectDB();
@@ -68,7 +66,7 @@ mongoose.connection.on('error', (err) => {
 
 connectDB();
 
-// Session middleware with MongoDB Atlas optimized settings
+// Session middleware
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
@@ -94,7 +92,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Passport Google Strategy configuration
+// Passport Google Strategy
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -142,13 +140,19 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
+// Auth middleware
+const isAuthenticated = (req, res, next) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  next();
+};
+
 // Auth routes
-app.get('/api/auth/google', (req, res, next) => {
-  passport.authenticate('google', {
-    scope: ['profile', 'email'],
-    prompt: 'select_account'
-  })(req, res, next);
-});
+app.get('/api/auth/google', passport.authenticate('google', {
+  scope: ['profile', 'email'],
+  prompt: 'select_account'
+}));
 
 app.get('/api/auth/google/callback',
   passport.authenticate('google', {
@@ -174,18 +178,10 @@ app.post('/api/auth/logout', (req, res) => {
   });
 });
 
-// Protected route middleware
-const isAuthenticated = (req, res, next) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-  next();
-};
-
-// API routes with improved error handling for MongoDB operations
+// Entry routes
 app.get('/api/entries', isAuthenticated, async (req, res) => {
   try {
-    const entries = await Entry.find({ userId: req.user.id }).sort({ createdAt: -1 });
+    const entries = await Entry.find({ userId: req.user._id }).sort({ createdAt: -1 });
     res.json(entries);
   } catch (error) {
     console.error('Fetch Entries Error:', error);
@@ -195,11 +191,23 @@ app.get('/api/entries', isAuthenticated, async (req, res) => {
 
 app.post('/api/entries', isAuthenticated, async (req, res) => {
   try {
+    const { title, type, content } = req.body;
+    
+    if (!title || !type || !content) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    if (!['text', 'image'].includes(type)) {
+      return res.status(400).json({ message: 'Invalid entry type' });
+    }
+
     const entry = await Entry.create({
-      userId: req.user.id,
-      type: req.body.type,
-      content: req.body.content
+      userId: req.user._id,
+      title,
+      type,
+      content
     });
+
     res.status(201).json(entry);
   } catch (error) {
     console.error('Create Entry Error:', error);
@@ -211,7 +219,7 @@ app.delete('/api/entries/:id', isAuthenticated, async (req, res) => {
   try {
     const result = await Entry.findOneAndDelete({
       _id: req.params.id,
-      userId: req.user.id
+      userId: req.user._id
     });
     
     if (!result) {

@@ -6,6 +6,11 @@ const entrySchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  title: {
+    type: String,
+    required: true,
+    trim: true
+  },
   type: {
     type: String,
     enum: ['text', 'image'],
@@ -20,5 +25,8 @@ const entrySchema = new mongoose.Schema({
     default: Date.now
   }
 });
+
+// Add index for faster queries
+entrySchema.index({ userId: 1, createdAt: -1 });
 
 export default mongoose.model('Entry', entrySchema);
